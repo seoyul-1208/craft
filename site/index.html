@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마크 재료 계산기</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>마크 재료 계산기</h1>
+  <span class="ver" id="ver"></span>
+</header>
+
+<main>
+  <section class="panel input-panel">
+    <label for="req" class="label">필요한 아이템과 수량</label>
+    <textarea id="req" spellcheck="false" placeholder="참나무 문 3&#10;참나무 다락문 3&#10;석재 벽돌 2세트"></textarea>
+    <div id="suggest" class="suggest"></div>
+    <div class="hint">
+      <kbd>Enter</kbd> 계산 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · <kbd>Tab</kbd> 첫 번째 추천 선택 ·
+      수량은 <code>3</code>, <code>2세트</code>, <code>1셜커</code>, <code>1큰상자</code>로 쓸 수 있어요
+    </div>
+    <div id="errors"></div>
+  </section>
+
+  <section class="panel result-panel">
+    <div class="result-head">
+      <h2>원재료</h2>
+      <div class="seg" id="sort" role="group" aria-label="정렬">
+        <button type="button" data-sort="input">입력순</button>
+        <button type="button" data-sort="name">이름순</button>
+        <button type="button" data-sort="material">재료순</button>
+      </div>
+      <div class="tools">
+        <button id="expandAll" type="button">모두 펼치기</button>
+        <button id="collapseAll" type="button">모두 접기</button>
+        <button id="resetOverrides" type="button" title="레시피 선택과 원재료 지정을 기본값으로 되돌립니다">설정 초기화</button>
+      </div>
+    </div>
+    <div id="tree" class="tree"><p class="empty">왼쪽에 아이템을 입력하고 Enter를 누르세요.</p></div>
+  </section>
+</main>
+
+<div id="tip" class="tip" hidden></div>
+<div id="menu" class="menu" hidden></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

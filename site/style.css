@@ -1,0 +1,197 @@
+:root {
+  --bg: #f3f1ec;
+  --panel: #ffffff;
+  --line: #ddd8cc;
+  --text: #24221e;
+  --muted: #7a7468;
+  --accent: #3f8a3a;
+  --accent-soft: #e4f1df;
+  --warn: #b5541c;
+  --warn-soft: #fbeadf;
+  --row-hover: #f1eee6;
+  --slot: #8b8b8b;
+  --slot-hi: #ffffff;
+  --slot-lo: #373737;
+  --tip-bg: #1e1328ee;
+  --tip-border: #2a0f5e;
+  --tip-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18191b;
+    --panel: #222326;
+    --line: #34363a;
+    --text: #e9e6df;
+    --muted: #9b968c;
+    --accent: #7cc66f;
+    --accent-soft: #263524;
+    --warn: #f08b4f;
+    --warn-soft: #3a2619;
+    --row-hover: #2b2d31;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+.top {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 20px 16px 8px;
+}
+.top h1 { margin: 0; font-size: 22px; }
+.ver { color: var(--muted); font-size: 13px; }
+main {
+  padding: 0 16px 40px; display: grid; gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); align-items: start;
+}
+.input-panel { position: sticky; top: 16px; }
+@media (max-width: 800px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  .input-panel { position: static; }
+}
+body, .panel, .row, .tip, .menu, button { text-align: left; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.label { display: block; font-weight: 600; margin-bottom: 8px; }
+textarea {
+  width: 100%; min-height: 260px; resize: vertical;
+  font: inherit; font-size: 16px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+}
+textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+kbd, code {
+  font: 12px ui-monospace, Consolas, monospace;
+  border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--bg);
+}
+
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  border-radius: 999px; padding: 3px 10px 3px 6px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.chip:hover, .chip.first { border-color: var(--accent); background: var(--accent-soft); }
+
+#errors:empty { display: none; }
+.err {
+  margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+  background: var(--warn-soft); color: var(--warn); font-size: 14px;
+}
+.err .chip { color: var(--text); margin: 4px 4px 0 0; }
+
+.result-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px 14px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 13px; color: var(--muted); background: var(--bg);
+  border: 0; padding: 4px 12px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.result-head h2 { margin: 0; font-size: 18px; }
+.tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.tools button, .menu button {
+  font: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.tools button:hover { border-color: var(--accent); }
+
+.empty { color: var(--muted); }
+
+/* 트리 */
+.tree { margin-top: 8px; }
+.node > .children { margin-left: 13px; padding-left: 14px; border-left: 1px dashed var(--line); }
+.node.collapsed > .children { display: none; }
+.row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer; user-select: none;
+}
+.row:hover { background: var(--row-hover); }
+.caret { width: 14px; text-align: center; color: var(--muted); font-size: 11px; transition: transform .12s; flex: none; }
+.node.collapsed > .row .caret { transform: rotate(-90deg); }
+.caret.leaf { visibility: hidden; }
+.name { font-weight: 500; }
+.root > .row .name { font-weight: 700; }
+.qty { font-variant-numeric: tabular-nums; }
+.root > .row .qty { color: var(--accent); font-weight: 700; }
+.sub { color: var(--muted); font-size: 13px; }
+.tag { font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+.acts { display: flex; gap: 4px; opacity: 0; }
+.row:hover .acts { opacity: 1; }
+.acts button {
+  font: inherit; font-size: 12px; color: var(--muted);
+  border: 1px solid var(--line); background: var(--panel); border-radius: 5px; padding: 1px 7px; cursor: pointer;
+}
+.acts button:hover { color: var(--text); border-color: var(--accent); }
+@media (hover: none) { .acts { opacity: 1; } }
+
+/* 아이콘 */
+.ic {
+  width: 24px; height: 24px; flex: none;
+  object-fit: cover; object-position: top;
+  image-rendering: pixelated;
+}
+.ic.none {
+  display: inline-grid; place-items: center;
+  background: var(--line); border-radius: 4px; font-size: 11px; color: var(--muted);
+}
+
+/* 조합법 툴팁 (마인크래프트 툴팁 느낌) */
+.tip {
+  position: fixed; z-index: 20; pointer-events: none;
+  background: var(--tip-bg); color: var(--tip-text);
+  border: 2px solid var(--tip-border); border-radius: 4px;
+  padding: 10px 12px; max-width: 360px; font-size: 13px;
+  box-shadow: 0 6px 20px #0006;
+}
+.tip h3 { margin: 0 0 2px; font-size: 15px; }
+.tip .kind { color: #c8c0ff; margin-bottom: 8px; }
+.tip .muted { color: #b9b2c9; }
+.craft { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+.grid { display: grid; gap: 2px; }
+.slot {
+  width: 36px; height: 36px; display: grid; place-items: center; position: relative;
+  background: var(--slot);
+  border: 2px solid; border-color: var(--slot-lo) var(--slot-hi) var(--slot-hi) var(--slot-lo);
+}
+.slot .ic { width: 28px; height: 28px; }
+.slot.out { width: 44px; height: 44px; }
+.slot .cnt {
+  position: absolute; right: 1px; bottom: -2px; font-size: 13px; font-weight: 700;
+  color: #fff; text-shadow: 2px 2px 0 #3f3f3f;
+}
+.slot .cnt.need { right: 0; bottom: -3px; font-size: 11px; text-shadow: 1px 1px 0 #3f3f3f; }
+.arrow { font-size: 22px; color: #ddd; }
+.tip ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* 레시피 선택 메뉴 */
+.menu {
+  position: fixed; z-index: 30;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px;
+  box-shadow: 0 8px 24px #0004; max-width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto;
+}
+.menu button {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  width: 100%; text-align: left; border: 0; margin: 0; padding: 6px 8px; background: none;
+}
+.menu button:hover { background: var(--row-hover); }
+.menu button.on { background: var(--accent-soft); }
+.menu .mi { display: inline-flex; align-items: center; gap: 2px; }
+.menu .mi .ic { width: 18px; height: 18px; }
+
+@media (max-width: 600px) {
+  .top h1 { font-size: 19px; }
+  .node > .children { margin-left: 8px; padding-left: 8px; }
+}
+
+/* 블록 모델로 그린 아이콘은 크게 그려 두었으므로 부드럽게 줄인다 */
+img.ic[src*="render__"] { image-rendering: auto; }
+
+/* 유리판은 유리와 같은 그림이라 좁게 보여준다 */
+.ic.shape-pane { object-fit: fill; width: 9px; margin: 0 7.5px; }
+.slot .ic.shape-pane { width: 10px; margin: 0 9px; }
