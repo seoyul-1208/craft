@@ -204,13 +204,17 @@
   for (const e of index) for (const k of [e.idn, e.en, e.ko]) exact.set(k, e.id);
 
   const UNIT = { "큰상자": STACK * CHEST, "상자": STACK * CHEST, "셜커": STACK * SHULKER, "세트": STACK, "개": 1 };
-  const QTY_RE = /(\d+)\s*(큰상자|상자|셜커|세트|개)?/g;
+  const QTY_ONE = /(\d+)\s*(큰상자|상자|셜커|세트|개)?/g;
+  // 곱하기로 이어진 수량 묶음 (14x3개, 14*3, 2세트 × 3)
+  const QTY_RE = /\d+\s*(?:큰상자|상자|셜커|세트|개)?(?:\s*[x×*]\s*\d+\s*(?:큰상자|상자|셜커|세트|개)?)*/gi;
 
   function splitLine(line) {
     let qty = 0, found = false;
     const qtyParts = [];
-    const rest = line.replace(QTY_RE, (m, n, u) => {
-      found = true; qty += Number(n) * UNIT[u || "개"]; qtyParts.push(m.trim()); return " ";
+    const rest = line.replace(QTY_RE, (m) => {
+      let v = 1;
+      m.replace(QTY_ONE, (_, n, u) => (v *= Number(n) * UNIT[u || "개"]));
+      found = true; qty += v; qtyParts.push(m.trim()); return " ";
     }).replace(/[x×*:=,\-]/gi, " ").trim();
     return { name: rest, qty: found ? qty : 1, qtyText: qtyParts.join(" ") };
   }
@@ -403,8 +407,15 @@
       ch.picks.forEach((p, i) => (h += `<li>${esc(name(p))} ${fmtQty(c.times * r.n[i])}</li>`));
       h += `</ul>`;
     }
-    const alt = r.s.some((s) => s.length > 1);
-    if (alt) h += `<div class="muted" style="margin-top:6px">같은 종류의 다른 재료(예: 다른 나무)로도 만들 수 있어요.</div>`;
+    // 바꿔 쓸 수 있는 재료 안내 (그림에는 하나만 보이므로)
+    r.s.forEach((alts, i) => {
+      if (alts.length < 2) return;
+      const others = alts.filter((a) => a !== ch.picks[i]);
+      const msg = alts.every((a) => a.endsWith("_dye"))
+        ? "염료는 아무 색이나 쓸 수 있어요."
+        : `${name(ch.picks[i])} 대신 ${others.slice(0, 3).map(name).join(", ")}${others.length > 3 ? " 등" : ""}도 쓸 수 있어요.`;
+      h += `<div class="muted" style="margin-top:6px">${esc(msg)}</div>`;
+    });
     return h;
   }
 

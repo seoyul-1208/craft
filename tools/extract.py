@@ -32,7 +32,7 @@ NATURAL_RAW = [
     "cobblestone", "deepslate", "sandstone", "red_sandstone", "terracotta", "coarse_dirt",
     "packed_ice", "blue_ice", "snow_block", "melon", "glowstone", "magma_block",
     "nether_wart_block", "dripstone_block", "amethyst_block", "leather", "honey_bottle",
-    "iron_ingot", "gold_ingot", "copper_ingot", "netherite_ingot", "diamond", "emerald",
+    "iron_ingot", "gold_ingot", "copper_ingot", "diamond", "emerald",
     "lapis_lazuli", "redstone", "coal", "quartz",
     "white_wool",
 ] + [f"{c}_dye" for c in BASE_DYES]
@@ -132,6 +132,9 @@ for path in sorted(n for n in names if n.startswith("data/minecraft/recipe/") an
     elif t == "crafting_decorated_pot":
         add("craft", out, cnt, [None, "p", None, "p", None, "p", None, "p", None],
             {"p": alts(r["back"])}, 3)
+    elif t == "crafting_special_firework_star":
+        # 모양·효과 재료는 넣지 않은 가장 기본 조합
+        add("craft", out, cnt, ["f", "d"], {"f": alts(r["fuel"]), "d": alts(r["dye"])})
     elif t == "smelting":
         add("smelt", out, cnt, ["a"], {"a": alts(r["ingredient"])})
     elif t == "stonecutting":
@@ -183,9 +186,11 @@ for rec in recipes:
         if (base, block) in compress:
             storage[base] = block
 
+# 블록 짝이 있어도 다른 재료로 만드는 아이템 (네더라이트 주괴 = 네더라이트 파편 4 + 금 주괴 4)
+CRAFTED = {"netherite_ingot"}
 raw = set(NATURAL_RAW)
 for base, block in storage.items():
-    if block not in raw:
+    if block not in raw and base not in CRAFTED:
         raw.add(base)  # 블록은 재료 9개로 분해하고, 재료 쪽을 원재료로 본다
 # 원재료를 다시 만드는 레시피(블록→주괴, 실→양털 등)는 계산에서 쓸 일이 없지만 그대로 둔다.
 
@@ -411,7 +416,8 @@ DEFAULT_UV = {
 }
 
 
-def render_block(info, tints):
+def render_block(info, tints, fit=None):
+    """fit: 그림 크기에 대한 비율. 주면 모델 크기와 상관없이 가운데에 그 크기로 맞춘다"""
     tex, elements, gui = info
     N = RENDER * SUPER
     rx, ry, rz = gui.get("rotation", [0, 0, 0])
@@ -424,7 +430,7 @@ def render_block(info, tints):
         a, b = el["from"], el["to"]
         er = el.get("rotation")
         for fname, f in el.get("faces", {}).items():
-            img = load_tex(f.get("texture", ""), tex)
+            img = f["img"] if "img" in f else load_tex(f.get("texture", ""), tex)
             if img is None:
                 continue
             pts = np.array(FACE_CORNERS[fname](a, b), dtype=float)
@@ -449,8 +455,17 @@ def render_block(info, tints):
             ti = f.get("tintindex")
             if ti is not None and 0 <= ti < len(tints):
                 color = tint_rgb(tints[ti])
-            scr = np.stack([N / 2 + v[:, 0] * N, N / 2 - v[:, 1] * N, v[:, 2]], axis=1)
-            faces.append((scr[:, 2].mean(), scr, np.array(uvs, dtype=float), img, shade, color))
+            faces.append((v, np.array(uvs, dtype=float), img, shade, color))
+
+    cx = cy = 0.0
+    k = 1.0
+    if fit and faces:
+        allv = np.concatenate([f[0] for f in faces])
+        lo, hi = allv[:, :2].min(axis=0), allv[:, :2].max(axis=0)
+        k = fit / max(hi - lo)
+        cx, cy = (lo + hi) / 2
+    faces = [(v[:, 2].mean(), np.stack([N / 2 + (v[:, 0] - cx) * k * N, N / 2 - (v[:, 1] - cy) * k * N, v[:, 2]], axis=1),
+              uvs, img, shade, color) for v, uvs, img, shade, color in faces]
 
     rgb = np.zeros((N, N, 3), dtype=np.float32)   # 미리 곱한 알파
     alpha = np.zeros((N, N), dtype=np.float32)
@@ -471,11 +486,11 @@ def render_block(info, tints):
         inside = (fa >= 0) & (fa < 1) & (fb >= 0) & (fb < 1)
         if not inside.any():
             continue
-        size = img.shape[0]
+        th, tw = img.shape[:2]
         u = uv[0, 0] + fa * (uv[1, 0] - uv[0, 0]) + fb * (uv[3, 0] - uv[0, 0])
         w = uv[0, 1] + fa * (uv[1, 1] - uv[0, 1]) + fb * (uv[3, 1] - uv[0, 1])
-        tx = np.clip(np.floor(u / 16 * size), 0, size - 1).astype(int)
-        ty = np.clip(np.floor(w / 16 * size), 0, size - 1).astype(int)
+        tx = np.clip(np.floor(u / 16 * tw), 0, tw - 1).astype(int)
+        ty = np.clip(np.floor(w / 16 * th), 0, th - 1).astype(int)
         texel = img[ty, tx]
         c = texel[..., :3] * shade
         if color is not None:
@@ -528,6 +543,81 @@ def tint_key(t):
     return "x" if c is None else "%02x%02x%02x" % tuple(int(x * 255 + 0.5) for x in c)
 
 
+# ---------- 몹 머리: 엔티티 텍스처의 머리 부분으로 상자를 만들어 그린다 ----------
+def entity_tex(path):
+    im = Image.open(io.BytesIO(jar.read(f"assets/minecraft/textures/entity/{path}.png"))).convert("RGBA")
+    return np.asarray(im, dtype=np.float32) / 255
+
+
+def ebox(img, u, v, x, y, z, w, h, d, grow=0.0, pivot=(0, 0, 0), zrot=0):
+    """엔티티 모델 상자(y가 아래, 앞이 -z) 하나를 블록 모델 요소(y가 위, 앞이 남쪽)로 바꾼다"""
+    px, py, pz = pivot
+    x0, x1 = px + x - grow, px + x + w + grow
+    y0, y1 = py + y - grow, py + y + h + grow
+    z0, z1 = pz + z - grow, pz + z + d + grow
+    regions = {"up": (u + d, v, w, d), "down": (u + d + w, v, w, d),
+               "west": (u, v + d, d, h), "south": (u + d, v + d, w, h),
+               "east": (u + d + w, v + d, d, h), "north": (u + 2 * d + w, v + d, w, h)}
+    faces = {}
+    for name_, (fx, fy, fw, fh) in regions.items():
+        part = img[fy:fy + fh, fx:fx + fw]
+        if part.size:
+            faces[name_] = {"img": part, "uv": [0, 0, 16, 16]}
+    el = {"from": [x0 + 8, -y1, 8 - z1], "to": [x1 + 8, -y0, 8 - z0], "faces": faces}
+    if zrot:
+        el["rotation"] = {"origin": [px + 8, -py, 8 - pz], "axis": "z", "angle": -zrot}
+    return el
+
+
+def humanoid_head(path, hat):
+    img = entity_tex(path)
+    els = [ebox(img, 0, 0, -4, -8, -4, 8, 8, 8)]
+    if hat:
+        els.append(ebox(img, 32, 0, -4, -8, -4, 8, 8, 8, grow=0.25))
+    return els
+
+
+def piglin_head():
+    img = entity_tex("piglin/piglin")
+    return [ebox(img, 0, 0, -5, -8, -4, 10, 8, 8),
+            ebox(img, 31, 1, -2, -4, -5, 4, 4, 1),
+            ebox(img, 2, 4, 2, -2, -5, 1, 2, 1),
+            ebox(img, 2, 0, -3, -2, -5, 1, 2, 1),
+            ebox(img, 51, 6, 0, 0, -2, 1, 5, 4, pivot=(4.5, -6, 0), zrot=-30),
+            ebox(img, 39, 6, -1, 0, -2, 1, 5, 4, pivot=(-4.5, -6, 0), zrot=30)]
+
+
+def dragon_head():
+    img = entity_tex("enderdragon/dragon")
+    return [ebox(img, 112, 30, -8, -8, -10, 16, 16, 16),
+            ebox(img, 176, 44, -6, -1, -24, 12, 5, 16),
+            ebox(img, 0, 0, -5, -12, -4, 2, 4, 6),
+            ebox(img, 0, 0, 3, -12, -4, 2, 4, 6),
+            ebox(img, 112, 0, -5, -3, -22, 2, 2, 4),
+            ebox(img, 112, 0, 3, -3, -22, 2, 2, 4),
+            ebox(img, 176, 65, -6, 0, -16, 12, 4, 16, pivot=(0, 4, -8))]
+
+
+HEADS = {
+    "skeleton_skull": lambda: humanoid_head("skeleton/skeleton", False),
+    "wither_skeleton_skull": lambda: humanoid_head("skeleton/wither_skeleton", False),
+    "zombie_head": lambda: humanoid_head("zombie/zombie", True),
+    "player_head": lambda: humanoid_head("player/wide/steve", True),
+    "creeper_head": lambda: humanoid_head("creeper/creeper", False),
+    "piglin_head": piglin_head,
+    "dragon_head": dragon_head,
+}
+HEAD_GUI = {"rotation": [30, -45, 0]}  # 얼굴이 왼쪽 앞을 보는 인벤토리 각도
+
+
+def head_render(item):
+    icon = f"head__{item}.png"
+    dst = os.path.join(icons_dir, icon)
+    if not os.path.exists(dst):
+        render_block(({}, HEADS[item](), HEAD_GUI), [], fit=0.8 if item == "dragon_head" else 0.66).save(dst)
+    return icon
+
+
 icons_dir = os.path.join(SITE, "icons")
 shutil.rmtree(icons_dir, ignore_errors=True)
 os.makedirs(icons_dir)
@@ -537,7 +627,7 @@ for item in sorted(used):
     icon = None
     gp = f"assets/minecraft/items/{item}.json"
     gt = golem_texture(read_json(gp)) if gp in names else None
-    rendered = None if gt in names else block_render(item)
+    rendered = head_render(item) if item in HEADS else None if gt in names else block_render(item)
     if rendered:
         icon = rendered
     elif gt in names:

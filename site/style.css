@@ -190,7 +190,7 @@ kbd, code {
 }
 
 /* 블록 모델로 그린 아이콘은 크게 그려 두었으므로 부드럽게 줄인다 */
-img.ic[src*="render__"] { image-rendering: auto; }
+img.ic[src*="render__"], img.ic[src*="head__"] { image-rendering: auto; }
 
 /* 유리판은 유리와 같은 그림이라 좁게 보여준다 */
 .ic.shape-pane { object-fit: fill; width: 9px; margin: 0 7.5px; }
