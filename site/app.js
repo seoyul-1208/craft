@@ -204,19 +204,88 @@
   for (const e of index) for (const k of [e.idn, e.en, e.ko]) exact.set(k, e.id);
 
   const UNIT = { "큰상자": STACK * CHEST, "상자": STACK * CHEST, "셜커": STACK * SHULKER, "세트": STACK, "개": 1 };
-  const QTY_ONE = /(\d+)\s*(큰상자|상자|셜커|세트|개)?/g;
-  // 곱하기로 이어진 수량 묶음 (14x3개, 14*3, 2세트 × 3)
-  const QTY_RE = /\d+\s*(?:큰상자|상자|셜커|세트|개)?(?:\s*[x×*]\s*\d+\s*(?:큰상자|상자|셜커|세트|개)?)*/gi;
+  // 수량은 사칙연산과 괄호를 쓸 수 있다 (14x3, 2세트+10, 100/3, (3+2)*4). 띄어 쓴 수는 더한다 (2세트 3개)
+  const TOKEN = /\s+|(\d+(?:\.\d+)?)\s*(큰상자|상자|셜커|세트|개)?|([+\-*/×÷()])|[^\s\d+\-*/×÷()]+/gy;
+  const OP = { "×": "*", "÷": "/" };
+
+  function tokenize(line) {
+    const toks = [];
+    let m;
+    TOKEN.lastIndex = 0;
+    while (TOKEN.lastIndex < line.length && (m = TOKEN.exec(line))) {
+      const text = m[0];
+      if (m[1]) toks.push({ k: "num", v: Number(m[1]) * UNIT[m[2] || "개"], text });
+      else if (m[3]) toks.push({ k: "()".includes(m[3]) ? m[3] : "op", v: OP[m[3]] || m[3], text });
+      else toks.push({ k: /^\s+$/.test(text) ? "sp" : "text", text });
+    }
+    // 수 사이의 x는 곱하기 (14x3, 14 x 3)
+    const solid = toks.map((t, i) => i).filter((i) => toks[i].k !== "sp");
+    solid.forEach((i, j) => {
+      const t = toks[i], a = toks[solid[j - 1]], b = toks[solid[j + 1]];
+      if (t.k === "text" && /^[xX]$/.test(t.text) && a && b && (a.k === "num" || a.k === ")") && (b.k === "num" || b.k === "("))
+        Object.assign(t, { k: "op", v: "*" });
+    });
+    return toks;
+  }
+
+  // 토큰 목록을 계산한다. 연산자 없이 이어진 수는 더한다
+  function evaluate(toks) {
+    let i = 0;
+    const peek = () => toks[i];
+    const factor = () => {
+      const t = toks[i++];
+      if (!t) return NaN;
+      if (t.k === "num") return t.v;
+      if (t.k === "op" && t.v === "-") return -factor();
+      if (t.k === "op" && t.v === "+") return factor();
+      if (t.k === "(") { const v = expr(); if (peek() && peek().k === ")") i++; return v; }
+      return NaN;
+    };
+    const term = () => {
+      let v = factor();
+      while (peek() && peek().k === "op" && "*/".includes(peek().v)) v = toks[i++].v === "*" ? v * factor() : v / factor();
+      return v;
+    };
+    const expr = () => {
+      let v = term();
+      while (peek() && peek().k !== ")") {
+        if (peek().k === "op" && "+-".includes(peek().v)) v = toks[i++].v === "+" ? v + term() : v - term();
+        else if (peek().k === "num" || peek().k === "(") v += term();
+        else break;
+      }
+      return v;
+    };
+    return expr();
+  }
 
   function splitLine(line) {
+    const toks = tokenize(line);
+    const names = [], qtyParts = [];
     let qty = 0, found = false;
-    const qtyParts = [];
-    const rest = line.replace(QTY_RE, (m) => {
-      let v = 1;
-      m.replace(QTY_ONE, (_, n, u) => (v *= Number(n) * UNIT[u || "개"]));
-      found = true; qty += v; qtyParts.push(m.trim()); return " ";
-    }).replace(/[x×*:=,\-]/gi, " ").trim();
-    return { name: rest, qty: found ? qty : 1, qtyText: qtyParts.join(" ") };
+    for (let i = 0; i < toks.length;) {
+      if (toks[i].k === "text") {
+        if (!/^[xX]$/.test(toks[i].text)) names.push(toks[i].text);
+        i++;
+        continue;
+      }
+      // 이름 사이에 있는 수식 한 덩어리
+      let j = i;
+      while (j < toks.length && toks[j].k !== "text") j++;
+      let run = toks.slice(i, j).filter((t) => t.k !== "sp");
+      // 앞뒤에 남은 연산자는 구분 기호로 본다 (흙 - 3)
+      while (run.length && run[0].k === "op") run.shift();
+      while (run.length && (run[run.length - 1].k === "op" || run[run.length - 1].k === "(")) run.pop();
+      if (run.some((t) => t.k === "num")) {
+        const v = evaluate(run);
+        found = true;
+        qty += Number.isFinite(v) ? v : 0;
+        qtyParts.push(toks.slice(i, j).map((t) => t.text).join("").trim());
+      }
+      i = j;
+    }
+    const name = names.join(" ").replace(/[:=,]/g, " ").replace(/\s+/g, " ").trim();
+    // 나누어 떨어지지 않으면 모자라지 않게 올림
+    return { name, qty: found ? Math.ceil(qty - 1e-9) : 1, qtyText: qtyParts.join(" ") };
   }
   function candidates(q, limit = 12) {
     const n = norm(q);
@@ -236,9 +305,13 @@
     return { options: c.slice(0, 12) };
   }
 
+  // 줄바꿈과 쉼표가 항목을 나눈다 (흙 5개, 조약돌 4개). li는 몇 번째 항목인지
+  const SEP = /([\n,])/;
+  const items = (text) => text.split(SEP).filter((_, i) => i % 2 === 0);
+
   function parseInput(text) {
     const reqs = [], errors = [];
-    text.split("\n").forEach((line, li) => {
+    items(text).forEach((line, li) => {
       if (!line.trim()) return;
       const { name: q, qty } = splitLine(line);
       if (!q) { errors.push({ li, msg: `"${line.trim()}": 아이템 이름이 없어요.` }); return; }
@@ -258,12 +331,13 @@
   const collapsed = new Set(store.get("mc.collapsed", []));
 
   function replaceLine(li, id) {
-    const lines = ta.value.split("\n");
-    const { qtyText } = splitLine(lines[li] || "");
-    lines[li] = `${name(id)} ${qtyText}`.trimEnd() + (qtyText ? "" : " ");
-    ta.value = lines.join("\n");
+    const parts = ta.value.split(SEP); // 짝수 칸이 항목, 홀수 칸이 구분자
+    const k = li * 2, seg = parts[k] || "";
+    const { qtyText } = splitLine(seg);
+    parts[k] = seg.match(/^\s*/)[0] + `${name(id)} ${qtyText}`.trimEnd() + (qtyText ? "" : " ");
+    ta.value = parts.join("");
     store.set("mc.input", ta.value);
-    return lines.slice(0, li + 1).join("\n").length;
+    return parts.slice(0, k + 1).join("").length;
   }
 
   function run() {
@@ -529,11 +603,11 @@
   function currentLine() {
     const pos = ta.selectionStart;
     const before = ta.value.slice(0, pos);
-    return before.split("\n").length - 1;
+    return items(before).length - 1;
   }
   function updateSuggest() {
     const li = currentLine();
-    const line = ta.value.split("\n")[li] || "";
+    const line = items(ta.value)[li] || "";
     const q = splitLine(line).name;
     sugg = q && !exact.has(norm(q)) ? candidates(q, 10) : [];
     suggest.innerHTML = sugg.map((id, i) =>

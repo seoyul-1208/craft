@@ -37,6 +37,15 @@ NATURAL_RAW = [
     "white_wool",
 ] + [f"{c}_dye" for c in BASE_DYES]
 
+# 서바이벌에서 얻을 수 없는 아이템 (생성 알, 벌레 먹은 블록과 함께 목록에서 뺀다)
+CREATIVE_ONLY = {
+    "trial_spawner", "spawner", "vault", "reinforced_deepslate", "budding_amethyst", "bedrock",
+    "end_portal_frame", "petrified_oak_slab", "farmland", "dirt_path", "frogspawn", "player_head",
+    "suspicious_sand", "suspicious_gravel", "command_block", "chain_command_block",
+    "repeating_command_block", "command_block_minecart", "structure_block", "structure_void", "jigsaw",
+    "barrier", "light", "debug_stick", "knowledge_book", "test_block", "test_instance_block",
+}
+
 jar = zipfile.ZipFile(os.path.join(MC, "versions", VERSION, f"{VERSION}.jar"))
 names = set(jar.namelist())
 
@@ -205,7 +214,8 @@ used |= raw
 for n in names:
     if n.startswith("assets/minecraft/items/") and n.endswith(".json"):
         i = n[len("assets/minecraft/items/"):-5]
-        if i != "air" and (lang_name(ko, i) or lang_name(en, i)):
+        if i != "air" and i not in CREATIVE_ONLY and not i.startswith("infested_") and not i.endswith("_spawn_egg") \
+                and (lang_name(ko, i) or lang_name(en, i)):
             used.add(i)
 
 TEX_PRIORITY = ["layer0", "all", "side", "front", "texture", "top", "end", "cross", "plant",
@@ -610,6 +620,69 @@ HEADS = {
 HEAD_GUI = {"rotation": [30, -45, 0]}  # 얼굴이 왼쪽 앞을 보는 인벤토리 각도
 
 
+def chest_texture(node):
+    """아이템 정의에서 상자 텍스처 이름을 찾는다 (크리스마스용은 건너뜀)"""
+    if isinstance(node, dict):
+        if strip(node.get("type", "")) == "chest" and strip(node.get("texture", "")) != "christmas":
+            return strip(node["texture"])
+        node = list(node.values())
+    if isinstance(node, list):
+        for v in node:
+            t = chest_texture(v)
+            if t:
+                return t
+    return None
+
+
+def flat_box(frm, to, regions, img):
+    """블록 모델 좌표의 상자. regions: 면 -> 텍스처 영역 (상자 텍스처는 위아래가 뒤집혀 저장되어 있다)"""
+    faces = {}
+    for face, (x, y, w, h) in regions.items():
+        faces[face] = {"img": img[y:y + h, x:x + w][::-1], "uv": [0, 0, 16, 16]}
+    return {"from": frm, "to": to, "faces": faces}
+
+
+def chest_elements(name_):
+    img = entity_tex(f"chest/{name_}")
+    # 텍스처에서 앞면(자물쇠 자국)은 띠의 네 번째 칸이다
+    return [
+        flat_box([1, 0, 1], [15, 10, 15], {"south": (42, 33, 14, 10), "west": (0, 33, 14, 10),
+                                           "east": (28, 33, 14, 10), "north": (14, 33, 14, 10)}, img),
+        flat_box([1, 9, 1], [15, 14, 15], {"south": (42, 14, 14, 5), "west": (0, 14, 14, 5),
+                                           "east": (28, 14, 14, 5), "north": (14, 14, 14, 5),
+                                           "up": (28, 0, 14, 14)}, img),
+        flat_box([7, 7, 15], [9, 11, 16], {"south": (1, 1, 2, 4), "west": (0, 1, 1, 4),
+                                           "east": (3, 1, 1, 4), "up": (1, 0, 2, 1)}, img),
+    ]
+
+
+def shield_elements():
+    img = entity_tex("shield/shield_base_nopattern")
+    return [ebox(img, 0, 0, -6, -11, -2, 12, 22, 1), ebox(img, 26, 0, -1, -3, -1, 2, 6, 6)]
+
+
+def special_render(item):
+    """특수 렌더러를 쓰는 아이템(머리, 상자, 방패)의 아이콘. 해당 없으면 None"""
+    if item in HEADS:
+        return head_render(item)
+    if item == "shield":
+        icon = "special__shield.png"
+        dst = os.path.join(icons_dir, icon)
+        if not os.path.exists(dst):
+            render_block(({}, shield_elements(), {"rotation": [15, -25, -5]}), [], fit=0.9).save(dst)
+        return icon
+    p = f"assets/minecraft/items/{item}.json"
+    tex = chest_texture(read_json(p)) if p in names else None
+    if not tex:
+        return None
+    icon = f"special__chest_{tex}.png"
+    dst = os.path.join(icons_dir, icon)
+    if not os.path.exists(dst):
+        gui = {"rotation": HEAD_GUI["rotation"], "scale": [0.625] * 3}
+        render_block(({}, chest_elements(tex), gui), []).save(dst)
+    return icon
+
+
 def head_render(item):
     icon = f"head__{item}.png"
     dst = os.path.join(icons_dir, icon)
@@ -627,7 +700,7 @@ for item in sorted(used):
     icon = None
     gp = f"assets/minecraft/items/{item}.json"
     gt = golem_texture(read_json(gp)) if gp in names else None
-    rendered = head_render(item) if item in HEADS else None if gt in names else block_render(item)
+    rendered = special_render(item) or (None if gt in names else block_render(item))
     if rendered:
         icon = rendered
     elif gt in names:
